@@ -436,9 +436,9 @@ try:
 
         data = response.json()
         # Get hourly weather data
-hourly = data["hourly"]
+        hourly = data["hourly"]
 
-hourly_df = pd.DataFrame({
+        hourly_df = pd.DataFrame({
     "Time": pd.to_datetime(hourly["time"]),
     "Temperature (°C)": hourly["temperature_2m"],
     "Rain (mm)": hourly["precipitation"],
