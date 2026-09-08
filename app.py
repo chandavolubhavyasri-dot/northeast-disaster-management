@@ -4,19 +4,9 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 from gtts import gTTS
-from datetime import datetime
-
-# =========================================================
-# AUTO REFRESH
-# =========================================================
-
 from streamlit_autorefresh import st_autorefresh
+from io import BytesIO
 
-# Refresh the complete app every 5 minutes
-st_autorefresh(
-    interval=5 * 60 * 1000,
-    key="weather_auto_refresh"
-)
 
 # =========================================================
 # PAGE CONFIGURATION
@@ -28,78 +18,17 @@ st.set_page_config(
     layout="wide"
 )
 
+
 # =========================================================
-# RAIN BACKGROUND
+# AUTOMATIC REFRESH
+# Refresh every 5 minutes
 # =========================================================
 
-st.markdown(
-    """
-    <style>
-
-    .stApp {
-        background-image:
-        linear-gradient(
-            rgba(0, 20, 40, 0.72),
-            rgba(0, 20, 40, 0.72)
-        ),
-        url("https://images.unsplash.com/photo-1515694346937-94d85e41e620?auto=format&fit=crop&w=2000&q=80");
-
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
-    }
-
-    .main .block-container {
-        background: rgba(255, 255, 255, 0.90);
-        padding: 2rem;
-        border-radius: 18px;
-    }
-
-    .hourly-container {
-        display: flex;
-        overflow-x: auto;
-        gap: 12px;
-        padding: 15px 5px 20px 5px;
-        scroll-behavior: smooth;
-    }
-
-    .weather-card {
-        min-width: 145px;
-        background: rgba(255,255,255,0.96);
-        border-radius: 16px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-        border: 1px solid #dddddd;
-    }
-
-    .weather-time {
-        font-size: 16px;
-        font-weight: bold;
-        color: #333333;
-    }
-
-    .weather-icon {
-        font-size: 32px;
-        margin: 8px;
-    }
-
-    .weather-temp {
-        font-size: 25px;
-        font-weight: bold;
-        color: #222222;
-    }
-
-    .weather-info {
-        font-size: 13px;
-        color: #555555;
-        margin-top: 5px;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
+st_autorefresh(
+    interval=5 * 60 * 1000,
+    key="weather_refresh"
 )
+
 
 # =========================================================
 # TITLE
@@ -112,13 +41,13 @@ st.subheader(
 )
 
 st.info(
-    "Monitor weather conditions, assess disaster risk, "
-    "view the Northeast India risk map and generate "
-    "voice warnings in multiple Indian languages."
+    "Monitor weather conditions, assess disaster risk and receive "
+    "multilingual warning messages for the Northeast Indian states."
 )
 
+
 # =========================================================
-# NORTHEAST INDIA STATES
+# NORTHEAST INDIA LOCATIONS
 # =========================================================
 
 locations = {
@@ -132,11 +61,12 @@ locations = {
     "Tripura": (23.9408, 91.9882)
 }
 
+
 # =========================================================
-# LANGUAGE OPTIONS
+# LANGUAGES
 # =========================================================
 
-language_options = {
+languages = {
     "English": "en",
     "Hindi": "hi",
     "Telugu": "te",
@@ -150,31 +80,309 @@ language_options = {
     "Punjabi": "pa"
 }
 
-# =========================================================
-# LANGUAGE SELECTION
-# =========================================================
-
-st.header("🗣️ Warning Language")
-
-language = st.selectbox(
-    "Select the language for the voice warning:",
-    list(language_options.keys())
-)
-
-language_code = language_options[language]
 
 # =========================================================
-# STATE SELECTION
+# WEATHER DESCRIPTION
 # =========================================================
 
-st.header("📍 Location")
+def weather_description(code):
 
-state = st.selectbox(
-    "Select a Northeast Indian State:",
-    list(locations.keys())
-)
+    code = int(code)
 
-latitude, longitude = locations[state]
+    weather_codes = {
+        0: "☀️ Clear sky",
+        1: "🌤️ Mainly clear",
+        2: "⛅ Partly cloudy",
+        3: "☁️ Overcast",
+        45: "🌫️ Fog",
+        48: "🌫️ Depositing rime fog",
+        51: "🌦️ Light drizzle",
+        53: "🌦️ Moderate drizzle",
+        55: "🌧️ Dense drizzle",
+        56: "🌧️ Light freezing drizzle",
+        57: "🌧️ Dense freezing drizzle",
+        61: "🌧️ Slight rain",
+        63: "🌧️ Moderate rain",
+        65: "🌧️ Heavy rain",
+        66: "🌧️ Light freezing rain",
+        67: "🌧️ Heavy freezing rain",
+        71: "🌨️ Slight snow",
+        73: "🌨️ Moderate snow",
+        75: "❄️ Heavy snow",
+        77: "🌨️ Snow grains",
+        80: "🌦️ Slight rain showers",
+        81: "🌧️ Moderate rain showers",
+        82: "⛈️ Violent rain showers",
+        85: "🌨️ Slight snow showers",
+        86: "🌨️ Heavy snow showers",
+        95: "⛈️ Thunderstorm",
+        96: "⛈️ Thunderstorm with hail",
+        99: "⛈️ Severe thunderstorm with hail"
+    }
+
+    return weather_codes.get(code, "🌥️ Unknown weather")
+
+
+# =========================================================
+# RISK CALCULATION
+# =========================================================
+
+def calculate_risk(
+    precipitation,
+    wind_speed,
+    humidity,
+    temperature
+):
+
+    score = 0
+
+    # Rainfall
+    if precipitation >= 50:
+        score += 3
+    elif precipitation >= 20:
+        score += 2
+    elif precipitation >= 10:
+        score += 1
+
+    # Wind speed
+    if wind_speed >= 60:
+        score += 3
+    elif wind_speed >= 40:
+        score += 2
+    elif wind_speed >= 25:
+        score += 1
+
+    # Humidity
+    if humidity >= 90:
+        score += 1
+
+    # Temperature
+    if temperature >= 40:
+        score += 2
+
+    # Risk level
+    if score >= 6:
+        risk = "HIGH"
+    elif score >= 3:
+        risk = "MEDIUM"
+    else:
+        risk = "LOW"
+
+    return risk, score
+
+
+# =========================================================
+# WARNING MESSAGE
+# =========================================================
+
+def generate_warning(state, risk, precipitation, wind_speed):
+
+    if risk == "HIGH":
+        warning = (
+            f"High risk alert for {state}. "
+            "Heavy or hazardous weather conditions may be present. "
+            "Please take necessary safety measures and follow "
+            "official disaster warnings."
+        )
+
+    elif risk == "MEDIUM":
+        warning = (
+            f"Medium risk alert for {state}. "
+            "Weather conditions require caution. "
+            "Please monitor weather updates and follow official advice."
+        )
+
+    else:
+        warning = (
+            f"Low risk conditions detected for {state}. "
+            "Continue monitoring weather updates and remain prepared."
+        )
+
+    if precipitation >= 20:
+        warning += (
+            " Heavy rainfall may increase the possibility of "
+            "flooding or landslide-related hazards."
+        )
+
+    if wind_speed >= 40:
+        warning += (
+            " Strong winds may create hazardous conditions."
+        )
+
+    return warning
+
+
+# =========================================================
+# MULTILINGUAL WARNING TEXT
+# =========================================================
+
+def translate_warning(state, risk, language):
+
+    warnings = {
+
+        "English": {
+            "HIGH":
+                f"High risk alert for {state}. Please take necessary "
+                "safety measures and follow official disaster warnings.",
+            "MEDIUM":
+                f"Medium risk alert for {state}. Please remain cautious "
+                "and monitor official weather updates.",
+            "LOW":
+                f"Low risk conditions detected for {state}. "
+                "Continue monitoring weather updates."
+        },
+
+        "Hindi": {
+            "HIGH":
+                f"{state} के लिए उच्च जोखिम चेतावनी। कृपया आवश्यक "
+                "सुरक्षा उपाय करें और आधिकारिक आपदा चेतावनियों का पालन करें।",
+            "MEDIUM":
+                f"{state} के लिए मध्यम जोखिम चेतावनी। कृपया सावधान रहें "
+                "और आधिकारिक मौसम जानकारी पर नजर रखें।",
+            "LOW":
+                f"{state} में कम जोखिम की स्थिति है। "
+                "मौसम की जानकारी पर नजर रखें।"
+        },
+
+        "Telugu": {
+            "HIGH":
+                f"{state} కు అధిక ప్రమాద హెచ్చరిక. దయచేసి అవసరమైన "
+                "భద్రతా చర్యలు తీసుకుని అధికారిక విపత్తు హెచ్చరికలను పాటించండి.",
+            "MEDIUM":
+                f"{state} కు మధ్యస్థ ప్రమాద హెచ్చరిక. దయచేసి జాగ్రత్తగా "
+                "ఉండి అధికారిక వాతావరణ సమాచారాన్ని గమనించండి.",
+            "LOW":
+                f"{state} లో తక్కువ ప్రమాద పరిస్థితులు ఉన్నాయి. "
+                "వాతావరణ సమాచారాన్ని గమనిస్తూ ఉండండి."
+        },
+
+        "Bengali": {
+            "HIGH":
+                f"{state} এর জন্য উচ্চ ঝুঁকির সতর্কতা। অনুগ্রহ করে "
+                "প্রয়োজনীয় নিরাপত্তা ব্যবস্থা নিন এবং সরকারি সতর্কতা অনুসরণ করুন।",
+            "MEDIUM":
+                f"{state} এর জন্য মাঝারি ঝুঁকির সতর্কতা। সতর্ক থাকুন "
+                "এবং সরকারি আবহাওয়ার তথ্য পর্যবেক্ষণ করুন।",
+            "LOW":
+                f"{state} এ কম ঝুঁকির পরিস্থিতি রয়েছে। "
+                "আবহাওয়ার তথ্য পর্যবেক্ষণ করুন।"
+        },
+
+        "Gujarati": {
+            "HIGH":
+                f"{state} માટે ઉચ્ચ જોખમની ચેતવણી. કૃપા કરીને જરૂરી "
+                "સુરક્ષા પગલાં લો અને સત્તાવાર ચેતવણીઓનું પાલન કરો.",
+            "MEDIUM":
+                f"{state} માટે મધ્યમ જોખમની ચેતવણી. સાવચેત રહો "
+                "અને સત્તાવાર હવામાન માહિતી તપાસતા રહો.",
+            "LOW":
+                f"{state} માં ઓછા જોખમની સ્થિતિ છે. "
+                "હવામાનની માહિતી પર નજર રાખો."
+        },
+
+        "Kannada": {
+            "HIGH":
+                f"{state} ಗೆ ಹೆಚ್ಚಿನ ಅಪಾಯದ ಎಚ್ಚರಿಕೆ. ದಯವಿಟ್ಟು ಅಗತ್ಯ "
+                "ಸುರಕ್ಷತಾ ಕ್ರಮಗಳನ್ನು ಕೈಗೊಂಡು ಅಧಿಕೃತ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಪಾಲಿಸಿ.",
+            "MEDIUM":
+                f"{state} ಗೆ ಮಧ್ಯಮ ಅಪಾಯದ ಎಚ್ಚರಿಕೆ. ಎಚ್ಚರಿಕೆಯಿಂದಿರಿ "
+                "ಮತ್ತು ಅಧಿಕೃತ ಹವಾಮಾನ ಮಾಹಿತಿಯನ್ನು ಗಮನಿಸಿ.",
+            "LOW":
+                f"{state} ನಲ್ಲಿ ಕಡಿಮೆ ಅಪಾಯದ ಪರಿಸ್ಥಿತಿ ಇದೆ. "
+                "ಹವಾಮಾನ ಮಾಹಿತಿಯನ್ನು ಗಮನಿಸುತ್ತಿರಿ."
+        },
+
+        "Malayalam": {
+            "HIGH":
+                f"{state} ൽ ഉയർന്ന അപകട മുന്നറിയിപ്പ്. ആവശ്യമായ "
+                "സുരക്ഷാ നടപടികൾ സ്വീകരിക്കുകയും ഔദ്യോഗിക മുന്നറിയിപ്പുകൾ പാലിക്കുകയും ചെയ്യുക.",
+            "MEDIUM":
+                f"{state} ൽ മിതമായ അപകട മുന്നറിയിപ്പ്. ജാഗ്രത പാലിക്കുകയും "
+                "ഔദ്യോഗിക കാലാവസ്ഥാ വിവരങ്ങൾ നിരീക്ഷിക്കുകയും ചെയ്യുക.",
+            "LOW":
+                f"{state} ൽ കുറഞ്ഞ അപകടസാധ്യതയാണ്. "
+                "കാലാവസ്ഥാ വിവരങ്ങൾ നിരീക്ഷിക്കുക."
+        },
+
+        "Marathi": {
+            "HIGH":
+                f"{state} साठी उच्च जोखीम इशारा. कृपया आवश्यक "
+                "सुरक्षा उपाय करा आणि अधिकृत आपत्ती सूचना पाळा.",
+            "MEDIUM":
+                f"{state} साठी मध्यम जोखीम इशारा. सावध राहा "
+                "आणि अधिकृत हवामान माहिती तपासा.",
+            "LOW":
+                f"{state} मध्ये कमी जोखीमची परिस्थिती आहे. "
+                "हवामान माहितीवर लक्ष ठेवा."
+        },
+
+        "Tamil": {
+            "HIGH":
+                f"{state} க்கு அதிக ஆபத்து எச்சரிக்கை. தேவையான "
+                "பாதுகாப்பு நடவடிக்கைகளை எடுத்து அதிகாரப்பூர்வ எச்சரிக்கைகளைப் பின்பற்றவும்.",
+            "MEDIUM":
+                f"{state} க்கு நடுத்தர ஆபத்து எச்சரிக்கை. "
+                "எச்சரிக்கையுடன் இருந்து வானிலை தகவல்களை கவனிக்கவும்.",
+            "LOW":
+                f"{state} இல் குறைந்த ஆபத்து நிலை உள்ளது. "
+                "வானிலை தகவல்களை தொடர்ந்து கவனிக்கவும்."
+        },
+
+        "Urdu": {
+            "HIGH":
+                f"{state} کے لیے زیادہ خطرے کی وارننگ۔ براہ کرم ضروری "
+                "حفاظتی اقدامات کریں اور سرکاری آفات کی وارننگ پر عمل کریں۔",
+            "MEDIUM":
+                f"{state} کے لیے درمیانے خطرے کی وارننگ۔ محتاط رہیں "
+                "اور سرکاری موسمی معلومات پر نظر رکھیں۔",
+            "LOW":
+                f"{state} میں کم خطرے کی صورتحال ہے۔ "
+                "موسمی معلومات پر نظر رکھیں۔"
+        },
+
+        "Punjabi": {
+            "HIGH":
+                f"{state} ਲਈ ਉੱਚ ਜੋਖਮ ਦੀ ਚੇਤਾਵਨੀ। ਕਿਰਪਾ ਕਰਕੇ ਲੋੜੀਂਦੇ "
+                "ਸੁਰੱਖਿਆ ਉਪਾਅ ਕਰੋ ਅਤੇ ਸਰਕਾਰੀ ਚੇਤਾਵਨੀਆਂ ਦੀ ਪਾਲਣਾ ਕਰੋ।",
+            "MEDIUM":
+                f"{state} ਲਈ ਦਰਮਿਆਨੇ ਜੋਖਮ ਦੀ ਚੇਤਾਵਨੀ। ਸਾਵਧਾਨ ਰਹੋ "
+                "ਅਤੇ ਸਰਕਾਰੀ ਮੌਸਮ ਜਾਣਕਾਰੀ ਦੀ ਨਿਗਰਾਨੀ ਕਰੋ।",
+            "LOW":
+                f"{state} ਵਿੱਚ ਘੱਟ ਜੋਖਮ ਦੀ ਸਥਿਤੀ ਹੈ। "
+                "ਮੌਸਮ ਦੀ ਜਾਣਕਾਰੀ 'ਤੇ ਨਜ਼ਰ ਰੱਖੋ।"
+        }
+    }
+
+    return warnings.get(
+        language,
+        warnings["English"]
+    ).get(
+        risk,
+        warnings["English"]["LOW"]
+    )
+
+
+# =========================================================
+# STATE AND LANGUAGE SELECTION
+# =========================================================
+
+col1, col2 = st.columns(2)
+
+with col1:
+    selected_state = st.selectbox(
+        "📍 Select Northeast State",
+        list(locations.keys())
+    )
+
+with col2:
+    selected_language = st.selectbox(
+        "🌐 Select Warning Language",
+        list(languages.keys())
+    )
+
+
+lat, lon = locations[selected_state]
+
 
 # =========================================================
 # OPEN-METEO API
@@ -183,23 +391,13 @@ latitude, longitude = locations[state]
 weather_url = "https://api.open-meteo.com/v1/forecast"
 
 weather_params = {
-    "latitude": latitude,
-    "longitude": longitude,
+    "latitude": lat,
+    "longitude": lon,
 
     "current": [
         "temperature_2m",
         "relative_humidity_2m",
         "precipitation",
-        "wind_speed_10m",
-        "weather_code"
-    ],
-
-    # HOURLY WEATHER
-    "hourly": [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "precipitation",
-        "precipitation_probability",
         "wind_speed_10m",
         "weather_code"
     ],
@@ -216,324 +414,9 @@ weather_params = {
     "timezone": "auto"
 }
 
-# =========================================================
-# WEATHER DESCRIPTION
-# =========================================================
-
-def weather_description(code):
-
-    if code == 0:
-        return "☀️ Clear Sky"
-
-    elif code in [1, 2, 3]:
-        return "🌤️ Partly Cloudy"
-
-    elif code in [45, 48]:
-        return "🌫️ Fog"
-
-    elif code in [51, 53, 55]:
-        return "🌦️ Drizzle"
-
-    elif code in [61, 63, 65]:
-        return "🌧️ Rain"
-
-    elif code in [66, 67]:
-        return "🌧️ Freezing Rain"
-
-    elif code in [71, 73, 75, 77]:
-        return "❄️ Snow"
-
-    elif code in [80, 81, 82]:
-        return "🌧️ Rain Showers"
-
-    elif code == 95:
-        return "⛈️ Thunderstorm"
-
-    elif code in [96, 99]:
-        return "⛈️ Thunderstorm with Hail"
-
-    return "🌦️ Unknown Weather"
-
-
-def weather_icon(code):
-
-    if code == 0:
-        return "☀️"
-
-    elif code in [1, 2, 3]:
-        return "🌤️"
-
-    elif code in [45, 48]:
-        return "🌫️"
-
-    elif code in [51, 53, 55]:
-        return "🌦️"
-
-    elif code in [61, 63, 65]:
-        return "🌧️"
-
-    elif code in [66, 67]:
-        return "🌧️"
-
-    elif code in [71, 73, 75, 77]:
-        return "❄️"
-
-    elif code in [80, 81, 82]:
-        return "🌧️"
-
-    elif code in [95, 96, 99]:
-        return "⛈️"
-
-    return "🌦️"
-
 
 # =========================================================
-# RISK CALCULATION
-# =========================================================
-
-def calculate_risk(
-    temperature,
-    humidity,
-    precipitation,
-    wind_speed
-):
-
-    score = 0
-    warnings = []
-
-    # Rainfall
-    if precipitation >= 50:
-        score += 3
-        warnings.append("Very heavy rainfall detected.")
-
-    elif precipitation >= 20:
-        score += 2
-        warnings.append("Heavy rainfall detected.")
-
-    elif precipitation >= 10:
-        score += 1
-        warnings.append("Moderate rainfall detected.")
-
-    # Wind
-    if wind_speed >= 60:
-        score += 3
-        warnings.append("Very strong wind detected.")
-
-    elif wind_speed >= 40:
-        score += 2
-        warnings.append("Strong wind detected.")
-
-    elif wind_speed >= 25:
-        score += 1
-        warnings.append("Moderate wind detected.")
-
-    # Humidity
-    if humidity >= 90:
-        score += 1
-        warnings.append("Very high humidity detected.")
-
-    # Temperature
-    if temperature >= 40:
-        score += 2
-        warnings.append("Extreme temperature detected.")
-
-    # Risk level
-    if score >= 6:
-        risk = "HIGH"
-
-    elif score >= 3:
-        risk = "MEDIUM"
-
-    else:
-        risk = "LOW"
-
-    return risk, warnings
-
-
-# =========================================================
-# RISK COLOR
-# =========================================================
-
-def risk_color(risk):
-
-    if risk == "HIGH":
-        return "red"
-
-    elif risk == "MEDIUM":
-        return "orange"
-
-    return "green"
-
-
-# =========================================================
-# MULTILINGUAL WARNING TEXT
-# =========================================================
-
-def get_warning_text(risk, state, language):
-
-    messages = {
-
-        "English": {
-            "HIGH":
-                f"High risk alert for {state}. "
-                "Please take necessary safety measures and "
-                "follow official disaster warnings.",
-
-            "MEDIUM":
-                f"Medium risk alert for {state}. "
-                "Please remain alert and monitor weather conditions.",
-
-            "LOW":
-                f"Low risk in {state}. "
-                "Weather conditions are currently relatively stable."
-        },
-
-        "Hindi": {
-            "HIGH":
-                f"{state} में उच्च जोखिम की चेतावनी। "
-                "कृपया आवश्यक सुरक्षा उपाय करें और आधिकारिक आपदा चेतावनियों का पालन करें।",
-
-            "MEDIUM":
-                f"{state} में मध्यम जोखिम की चेतावनी। "
-                "कृपया सतर्क रहें और मौसम की स्थिति पर नजर रखें।",
-
-            "LOW":
-                f"{state} में कम जोखिम है। "
-                "मौसम की स्थिति वर्तमान में अपेक्षाकृत स्थिर है।"
-        },
-
-        "Telugu": {
-            "HIGH":
-                f"{state} లో అధిక ప్రమాద హెచ్చరిక. "
-                "దయచేసి అవసరమైన భద్రతా చర్యలు తీసుకోండి మరియు అధికారిక విపత్తు హెచ్చరికలను పాటించండి.",
-
-            "MEDIUM":
-                f"{state} లో మధ్యస్థ ప్రమాద హెచ్చరిక. "
-                "దయచేసి అప్రమత్తంగా ఉండి వాతావరణ పరిస్థితులను గమనించండి.",
-
-            "LOW":
-                f"{state} లో తక్కువ ప్రమాదం ఉంది. "
-                "ప్రస్తుతం వాతావరణ పరిస్థితులు సాధారణంగా స్థిరంగా ఉన్నాయి."
-        },
-
-        "Bengali": {
-            "HIGH":
-                f"{state}-এ উচ্চ ঝুঁকির সতর্কতা। "
-                "দয়া করে প্রয়োজনীয় নিরাপত্তা ব্যবস্থা নিন এবং সরকারি দুর্যোগ সতর্কতা অনুসরণ করুন।",
-
-            "MEDIUM":
-                f"{state}-এ মাঝারি ঝুঁকির সতর্কতা। "
-                "দয়া করে সতর্ক থাকুন এবং আবহাওয়ার পরিস্থিতি পর্যবেক্ষণ করুন।",
-
-            "LOW":
-                f"{state}-এ কম ঝুঁকি রয়েছে। "
-                "বর্তমানে আবহাওয়ার পরিস্থিতি তুলনামূলকভাবে স্থিতিশীল।"
-        },
-
-        "Gujarati": {
-            "HIGH":
-                f"{state} માટે ઉચ્ચ જોખમની ચેતવણી. "
-                "કૃપા કરીને જરૂરી સુરક્ષા પગલાં લો અને સત્તાવાર આપત્તિ ચેતવણીઓનું પાલન કરો.",
-
-            "MEDIUM":
-                f"{state} માટે મધ્યમ જોખમની ચેતવણી. "
-                "કૃપા કરીને સાવચેત રહો અને હવામાનની સ્થિતિ પર નજર રાખો.",
-
-            "LOW":
-                f"{state} માં ઓછું જોખમ છે. "
-                "હાલમાં હવામાનની સ્થિતિ પ્રમાણમાં સ્થિર છે."
-        },
-
-        "Kannada": {
-            "HIGH":
-                f"{state} ನಲ್ಲಿ ಹೆಚ್ಚಿನ ಅಪಾಯದ ಎಚ್ಚರಿಕೆ. "
-                "ದಯವಿಟ್ಟು ಅಗತ್ಯ ಸುರಕ್ಷತಾ ಕ್ರಮಗಳನ್ನು ತೆಗೆದುಕೊಳ್ಳಿ ಮತ್ತು ಅಧಿಕೃತ ವಿಪತ್ತು ಎಚ್ಚರಿಕೆಗಳನ್ನು ಅನುಸರಿಸಿ.",
-
-            "MEDIUM":
-                f"{state} ನಲ್ಲಿ ಮಧ್ಯಮ ಅಪಾಯದ ಎಚ್ಚರಿಕೆ. "
-                "ದಯವಿಟ್ಟು ಎಚ್ಚರಿಕೆಯಿಂದಿರಿ ಮತ್ತು ಹವಾಮಾನ ಪರಿಸ್ಥಿತಿಯನ್ನು ಗಮನಿಸಿ.",
-
-            "LOW":
-                f"{state} ನಲ್ಲಿ ಕಡಿಮೆ ಅಪಾಯವಿದೆ. "
-                "ಪ್ರಸ್ತುತ ಹವಾಮಾನ ಪರಿಸ್ಥಿತಿ ಸಾಮಾನ್ಯವಾಗಿ ಸ್ಥಿರವಾಗಿದೆ."
-        },
-
-        "Malayalam": {
-            "HIGH":
-                f"{state} ൽ ഉയർന്ന അപകടസാധ്യതാ മുന്നറിയിപ്പ്. "
-                "ദയവായി ആവശ്യമായ സുരക്ഷാ നടപടികൾ സ്വീകരിക്കുകയും ഔദ്യോഗിക ദുരന്ത മുന്നറിയിപ്പുകൾ പാലിക്കുകയും ചെയ്യുക.",
-
-            "MEDIUM":
-                f"{state} ൽ മിതമായ അപകടസാധ്യതാ മുന്നറിയിപ്പ്. "
-                "ദയവായി ജാഗ്രത പാലിക്കുകയും കാലാവസ്ഥ നിരീക്ഷിക്കുകയും ചെയ്യുക.",
-
-            "LOW":
-                f"{state} ൽ കുറഞ്ഞ അപകടസാധ്യതയാണ്. "
-                "നിലവിലെ കാലാവസ്ഥ താരതമ്യേന സ്ഥിരമാണ്."
-        },
-
-        "Marathi": {
-            "HIGH":
-                f"{state} साठी उच्च जोखमीचा इशारा. "
-                "कृपया आवश्यक सुरक्षा उपाय करा आणि अधिकृत आपत्ती इशाऱ्यांचे पालन करा.",
-
-            "MEDIUM":
-                f"{state} साठी मध्यम जोखमीचा इशारा. "
-                "कृपया सतर्क राहा आणि हवामान परिस्थितीवर लक्ष ठेवा.",
-
-            "LOW":
-                f"{state} मध्ये कमी धोका आहे. "
-                "सध्या हवामानाची परिस्थिती तुलनेने स्थिर आहे."
-        },
-
-        "Tamil": {
-            "HIGH":
-                f"{state} பகுதியில் அதிக ஆபத்து எச்சரிக்கை. "
-                "தயவுசெய்து தேவையான பாதுகாப்பு நடவடிக்கைகளை மேற்கொண்டு அதிகாரப்பூர்வ பேரிடர் எச்சரிக்கைகளைப் பின்பற்றவும்.",
-
-            "MEDIUM":
-                f"{state} பகுதியில் நடுத்தர ஆபத்து எச்சரிக்கை. "
-                "தயவுசெய்து விழிப்புடன் இருந்து வானிலை நிலையை கண்காணிக்கவும்.",
-
-            "LOW":
-                f"{state} பகுதியில் குறைந்த ஆபத்து உள்ளது. "
-                "தற்போது வானிலை நிலை ஒப்பீட்டளவில் நிலையாக உள்ளது."
-        },
-
-        "Urdu": {
-            "HIGH":
-                f"{state} کے لیے زیادہ خطرے کی وارننگ۔ "
-                "براہ کرم ضروری حفاظتی اقدامات کریں اور سرکاری آفات کی وارننگ پر عمل کریں۔",
-
-            "MEDIUM":
-                f"{state} کے لیے درمیانے خطرے کی وارننگ۔ "
-                "براہ کرم محتاط رہیں اور موسم کی صورتحال پر نظر رکھیں۔",
-
-            "LOW":
-                f"{state} میں کم خطرہ ہے۔ "
-                "موجودہ موسمی صورتحال نسبتاً مستحکم ہے۔"
-        },
-
-        "Punjabi": {
-            "HIGH":
-                f"{state} ਲਈ ਉੱਚ ਖਤਰੇ ਦੀ ਚੇਤਾਵਨੀ। "
-                "ਕਿਰਪਾ ਕਰਕੇ ਜ਼ਰੂਰੀ ਸੁਰੱਖਿਆ ਕਦਮ ਚੁੱਕੋ ਅਤੇ ਸਰਕਾਰੀ ਆਫ਼ਤ ਚੇਤਾਵਨੀਆਂ ਦੀ ਪਾਲਣਾ ਕਰੋ।",
-
-            "MEDIUM":
-                f"{state} ਲਈ ਦਰਮਿਆਨੇ ਖਤਰੇ ਦੀ ਚੇਤਾਵਨੀ। "
-                "ਕਿਰਪਾ ਕਰਕੇ ਸਾਵਧਾਨ ਰਹੋ ਅਤੇ ਮੌਸਮ ਦੀ ਸਥਿਤੀ 'ਤੇ ਨਜ਼ਰ ਰੱਖੋ।",
-
-            "LOW":
-                f"{state} ਵਿੱਚ ਘੱਟ ਖਤਰਾ ਹੈ। "
-                "ਮੌਜੂਦਾ ਮੌਸਮ ਦੀ ਸਥਿਤੀ ਮੁਕਾਬਲਤਨ ਸਥਿਰ ਹੈ."
-        }
-    }
-
-    return messages[language][risk]
-
-
-# =========================================================
-# GET WEATHER DATA
+# FETCH WEATHER
 # =========================================================
 
 try:
@@ -549,8 +432,12 @@ try:
         data = response.json()
 
         current = data["current"]
-        hourly = data["hourly"]
         daily = data["daily"]
+
+
+        # =================================================
+        # CURRENT WEATHER
+        # =================================================
 
         temperature = current["temperature_2m"]
         humidity = current["relative_humidity_2m"]
@@ -558,251 +445,139 @@ try:
         wind_speed = current["wind_speed_10m"]
         weather_code = current["weather_code"]
 
+        weather_text = weather_description(weather_code)
+
+
         # =================================================
-        # LAST UPDATED
+        # RISK CALCULATION
         # =================================================
 
-        st.caption(
-            f"🔄 Weather data automatically refreshes every 5 minutes | "
-            f"Last update: {current.get('time', 'Unknown')}"
+        risk, risk_score = calculate_risk(
+            precipitation,
+            wind_speed,
+            humidity,
+            temperature
         )
 
+
         # =================================================
-        # CURRENT WEATHER
+        # CURRENT WEATHER SECTION
         # =================================================
 
-        st.header(f"📍 Current Weather — {state}")
+        st.markdown("---")
 
-        st.write(
-            weather_description(weather_code)
-        )
+        st.header(f"🌦️ Current Weather - {selected_state}")
 
-        col1, col2, col3, col4 = st.columns(4)
+        weather_col1, weather_col2 = st.columns(2)
 
-        with col1:
+        with weather_col1:
+
             st.metric(
                 "🌡️ Temperature",
-                f"{temperature} °C"
+                f"{temperature:.1f} °C"
             )
 
-        with col2:
-            st.metric(
-                "💧 Humidity",
-                f"{humidity}%"
-            )
-
-        with col3:
             st.metric(
                 "🌧️ Rainfall",
-                f"{precipitation} mm"
+                f"{precipitation:.1f} mm"
             )
 
-        with col4:
+            st.metric(
+                "💧 Humidity",
+                f"{humidity:.0f}%"
+            )
+
             st.metric(
                 "💨 Wind Speed",
-                f"{wind_speed} km/h"
+                f"{wind_speed:.1f} km/h"
             )
 
-        # =================================================
-        # HOURLY WEATHER
-        # =================================================
 
-        st.header("🕐 Hourly Weather Forecast")
+        with weather_col2:
 
-        hourly_times = pd.to_datetime(
-            hourly["time"]
-        )
+            st.subheader("☁️ Weather Condition")
 
-        hourly_cards = []
+            st.success(weather_text)
 
-        for i in range(min(24, len(hourly_times))):
+            st.subheader("⚠️ Risk Assessment")
 
-            time_value = hourly_times[i]
+            if risk == "HIGH":
+                st.error(
+                    f"🔴 HIGH RISK\n\nRisk Score: {risk_score}"
+                )
 
-            icon = weather_icon(
-                hourly["weather_code"][i]
-            )
+            elif risk == "MEDIUM":
+                st.warning(
+                    f"🟠 MEDIUM RISK\n\nRisk Score: {risk_score}"
+                )
 
-            time_text = time_value.strftime("%I %p")
+            else:
+                st.success(
+                    f"🟢 LOW RISK\n\nRisk Score: {risk_score}"
+                )
 
-            temp = hourly["temperature_2m"][i]
-
-            rain = hourly["precipitation"][i]
-
-            rain_probability = hourly[
-                "precipitation_probability"
-            ][i]
-
-            humidity_hour = hourly[
-                "relative_humidity_2m"
-            ][i]
-
-            wind_hour = hourly[
-                "wind_speed_10m"
-            ][i]
-
-            card = f"""
-            <div class="weather-card">
-
-                <div class="weather-time">
-                    {time_text}
-                </div>
-
-                <div class="weather-icon">
-                    {icon}
-                </div>
-
-                <div class="weather-temp">
-                    {temp}°C
-                </div>
-
-                <div class="weather-info">
-                    🌧️ Rain: {rain} mm
-                </div>
-
-                <div class="weather-info">
-                    💧 {rain_probability}% chance
-                </div>
-
-                <div class="weather-info">
-                    💦 Humidity: {humidity_hour}%
-                </div>
-
-                <div class="weather-info">
-                    💨 Wind: {wind_hour} km/h
-                </div>
-
-            </div>
-            """
-
-            hourly_cards.append(card)
-
-        st.markdown(
-            '<div class="hourly-container">'
-            + "".join(hourly_cards)
-            + "</div>",
-            unsafe_allow_html=True
-        )
 
         # =================================================
-        # HOURLY DATA TABLE
+        # WARNING
         # =================================================
 
-        with st.expander("📊 View hourly weather data"):
+        st.markdown("---")
 
-            hourly_df = pd.DataFrame({
-                "Time": hourly["time"][:24],
-                "Temperature (°C)": hourly[
-                    "temperature_2m"
-                ][:24],
+        st.header("🚨 Early Warning")
 
-                "Rain (mm)": hourly[
-                    "precipitation"
-                ][:24],
-
-                "Rain Probability (%)": hourly[
-                    "precipitation_probability"
-                ][:24],
-
-                "Humidity (%)": hourly[
-                    "relative_humidity_2m"
-                ][:24],
-
-                "Wind (km/h)": hourly[
-                    "wind_speed_10m"
-                ][:24]
-            })
-
-            st.dataframe(
-                hourly_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-        # =================================================
-        # RISK ASSESSMENT
-        # =================================================
-
-        risk, warnings = calculate_risk(
-            temperature,
-            humidity,
+        warning = generate_warning(
+            selected_state,
+            risk,
             precipitation,
             wind_speed
         )
 
-        st.header("⚠️ Disaster Risk Assessment")
-
         if risk == "HIGH":
-            st.error("🔴 HIGH RISK")
+            st.error(warning)
 
         elif risk == "MEDIUM":
-            st.warning("🟠 MEDIUM RISK")
+            st.warning(warning)
 
         else:
-            st.success("🟢 LOW RISK")
+            st.success(warning)
+
 
         # =================================================
-        # RISK INDICATORS
+        # MULTILINGUAL WARNING
         # =================================================
 
-        st.subheader("🚨 Weather Risk Indicators")
-
-        if warnings:
-
-            for warning in warnings:
-                st.warning(warning)
-
-        else:
-
-            st.success(
-                "No major weather risk indicators detected."
-            )
-
-        # =================================================
-        # MULTILINGUAL VOICE WARNING
-        # =================================================
+        st.markdown("---")
 
         st.header("🔊 Multilingual Voice Warning")
 
-        warning_text = get_warning_text(
+        translated_warning = translate_warning(
+            selected_state,
             risk,
-            state,
-            language
+            selected_language
         )
 
-        st.write(
-            f"**{language} warning:**"
-        )
-
-        st.info(warning_text)
+        st.info(translated_warning)
 
         if st.button("🔊 Generate & Play Warning"):
 
             try:
 
-                with st.spinner(
-                    "Generating voice warning..."
-                ):
+                language_code = languages[selected_language]
 
-                    tts = gTTS(
-                        text=warning_text,
-                        lang=language_code,
-                        slow=False
-                    )
+                audio_buffer = BytesIO()
 
-                    audio_file = "warning.mp3"
+                tts = gTTS(
+                    text=translated_warning,
+                    lang=language_code,
+                    slow=False
+                )
 
-                    tts.save(audio_file)
+                tts.write_to_fp(audio_buffer)
 
-                with open(
-                    audio_file,
-                    "rb"
-                ) as audio:
-
-                    audio_bytes = audio.read()
+                audio_buffer.seek(0)
 
                 st.audio(
-                    audio_bytes,
+                    audio_buffer,
                     format="audio/mp3"
                 )
 
@@ -810,40 +585,34 @@ try:
 
                 st.error(
                     "Unable to generate voice warning. "
-                    "Please check your internet connection "
-                    f"or try another language. Error: {e}"
+                    "Please check your internet connection."
                 )
+
 
         # =================================================
         # 7-DAY FORECAST
         # =================================================
 
+        st.markdown("---")
+
         st.header("📅 7-Day Weather Forecast")
 
-        forecast_data = {
+        forecast_data = []
 
-            "Date":
-                daily["time"],
+        for i in range(len(daily["time"])):
 
-            "Max Temperature (°C)":
-                daily["temperature_2m_max"],
+            forecast_data.append({
+                "Date": daily["time"][i],
+                "Max Temp (°C)": daily["temperature_2m_max"][i],
+                "Min Temp (°C)": daily["temperature_2m_min"][i],
+                "Rainfall (mm)": daily["precipitation_sum"][i],
+                "Rain Probability (%)":
+                    daily["precipitation_probability_max"][i],
+                "Max Wind (km/h)":
+                    daily["wind_speed_10m_max"][i]
+            })
 
-            "Min Temperature (°C)":
-                daily["temperature_2m_min"],
-
-            "Rainfall (mm)":
-                daily["precipitation_sum"],
-
-            "Rain Probability (%)":
-                daily["precipitation_probability_max"],
-
-            "Max Wind (km/h)":
-                daily["wind_speed_10m_max"]
-        }
-
-        forecast_df = pd.DataFrame(
-            forecast_data
-        )
+        forecast_df = pd.DataFrame(forecast_data)
 
         st.dataframe(
             forecast_df,
@@ -851,47 +620,37 @@ try:
             hide_index=True
         )
 
+
         # =================================================
-        # INTERACTIVE NORTHEAST INDIA MAP
+        # RISK MAP
         # =================================================
 
-        st.header(
-            "🗺️ Northeast India Interactive Risk Map"
-        )
+        st.markdown("---")
 
-        st.write(
-            "Tap a state marker to view its current "
-            "weather conditions and risk level."
-        )
+        st.header("🗺️ Northeast India Risk Map")
 
         northeast_map = folium.Map(
-            location=[
-                25.5,
-                92.5
-            ],
-            zoom_start=6,
-            tiles="OpenStreetMap"
+            location=[25.5, 93.5],
+            zoom_start=6
         )
 
-        # =================================================
-        # MAP STATE MARKERS
-        # =================================================
 
-        for state_name, coords in locations.items():
+        # Add all 8 states
+
+        for state, (state_lat, state_lon) in locations.items():
 
             try:
 
                 state_params = {
-
-                    "latitude": coords[0],
-
-                    "longitude": coords[1],
+                    "latitude": state_lat,
+                    "longitude": state_lon,
 
                     "current": [
                         "temperature_2m",
                         "relative_humidity_2m",
                         "precipitation",
-                        "wind_speed_10m"
+                        "wind_speed_10m",
+                        "weather_code"
                     ],
 
                     "timezone": "auto"
@@ -905,233 +664,211 @@ try:
 
                 if state_response.status_code == 200:
 
-                    state_data = (
-                        state_response.json()
+                    state_data = state_response.json()
+
+                    state_current = state_data["current"]
+
+                    state_temperature = state_current[
+                        "temperature_2m"
+                    ]
+
+                    state_humidity = state_current[
+                        "relative_humidity_2m"
+                    ]
+
+                    state_rain = state_current[
+                        "precipitation"
+                    ]
+
+                    state_wind = state_current[
+                        "wind_speed_10m"
+                    ]
+
+                    state_risk, state_score = calculate_risk(
+                        state_rain,
+                        state_wind,
+                        state_humidity,
+                        state_temperature
                     )
 
-                    state_current = (
-                        state_data["current"]
-                    )
 
-                    state_temp = (
-                        state_current[
-                            "temperature_2m"
-                        ]
-                    )
+                    # Risk marker color
 
-                    state_humidity = (
-                        state_current[
-                            "relative_humidity_2m"
-                        ]
-                    )
+                    if state_risk == "HIGH":
+                        marker_color = "red"
 
-                    state_rain = (
-                        state_current[
-                            "precipitation"
-                        ]
-                    )
+                    elif state_risk == "MEDIUM":
+                        marker_color = "orange"
 
-                    state_wind = (
-                        state_current[
-                            "wind_speed_10m"
-                        ]
-                    )
+                    else:
+                        marker_color = "green"
 
-                    state_risk, state_warnings = (
-                        calculate_risk(
-                            state_temp,
-                            state_humidity,
-                            state_rain,
-                            state_wind
-                        )
-                    )
-
-                    color = risk_color(
-                        state_risk
-                    )
 
                     popup_text = f"""
-                    <div style="font-size:14px">
-
-                    <b>{state_name}</b><br><br>
-
-                    Risk Level:
-                    <b>{state_risk}</b><br>
-
-                    Temperature:
-                    {state_temp} °C<br>
-
-                    Humidity:
-                    {state_humidity}%<br>
-
-                    Rainfall:
-                    {state_rain} mm<br>
-
-                    Wind Speed:
-                    {state_wind} km/h
-
-                    </div>
+                    <b>{state}</b><br>
+                    Risk: {state_risk}<br>
+                    Temperature: {state_temperature:.1f} °C<br>
+                    Rainfall: {state_rain:.1f} mm<br>
+                    Humidity: {state_humidity:.0f}%<br>
+                    Wind: {state_wind:.1f} km/h
                     """
 
-                    folium.Marker(
 
-                        location=coords,
+                    folium.Marker(
+                        location=[
+                            state_lat,
+                            state_lon
+                        ],
 
                         popup=folium.Popup(
                             popup_text,
                             max_width=300
                         ),
 
-                        tooltip=(
-                            f"{state_name} - "
-                            f"{state_risk} RISK"
-                        ),
+                        tooltip=f"{state} - {state_risk}",
 
                         icon=folium.Icon(
-                            color=color,
-                            icon="info-sign"
+                            color=marker_color,
+                            icon="warning-sign"
                         )
+                    ).add_to(northeast_map)
 
-                    ).add_to(
-                        northeast_map
-                    )
 
             except Exception:
-                continue
+                pass
 
-        # =================================================
-        # DISPLAY MAP
-        # =================================================
 
         st_folium(
             northeast_map,
-            width=1100,
-            height=600
+            width=None,
+            height=550
         )
+
 
         # =================================================
         # MAP LEGEND
         # =================================================
 
-        st.subheader("📊 Risk Map Legend")
+        st.markdown(
+            """
+            ### 🟢 Risk Map Legend
 
-        legend1, legend2, legend3 = st.columns(3)
-
-        with legend1:
-            st.error("🔴 HIGH RISK")
-
-        with legend2:
-            st.warning("🟠 MEDIUM RISK")
-
-        with legend3:
-            st.success("🟢 LOW RISK")
-
-        # =================================================
-        # RAINFALL ALERT
-        # =================================================
-
-        st.header("🌧️ Rainfall Monitoring")
-
-        maximum_rain = max(
-            daily["precipitation_sum"]
+            🔴 **HIGH** – Potentially hazardous conditions  
+            
+            🟠 **MEDIUM** – Conditions require caution  
+            
+            🟢 **LOW** – Normal/low-risk conditions
+            """
         )
 
-        if maximum_rain >= 50:
-
-            st.error(
-                f"🚨 Very Heavy Rainfall Alert — "
-                f"{maximum_rain} mm forecast."
-            )
-
-        elif maximum_rain >= 20:
-
-            st.warning(
-                f"⚠️ Heavy Rainfall Alert — "
-                f"{maximum_rain} mm forecast."
-            )
-
-        else:
-
-            st.success(
-                "✅ No heavy rainfall threshold detected "
-                "in the forecast."
-            )
 
         # =================================================
-        # WIND ALERT
+        # ALERT INDICATORS
         # =================================================
 
-        st.header("💨 Wind Monitoring")
+        st.markdown("---")
 
-        maximum_wind = max(
-            daily["wind_speed_10m_max"]
+        st.header("📢 Weather Alert Indicators")
+
+        alert_col1, alert_col2 = st.columns(2)
+
+
+        with alert_col1:
+
+            if precipitation >= 20:
+
+                st.error(
+                    "🌧️ Heavy Rainfall Alert\n\n"
+                    f"Current rainfall: {precipitation:.1f} mm"
+                )
+
+            elif precipitation >= 10:
+
+                st.warning(
+                    "🌦️ Rainfall Alert\n\n"
+                    f"Current rainfall: {precipitation:.1f} mm"
+                )
+
+            else:
+
+                st.success(
+                    "☀️ No Significant Rainfall Alert"
+                )
+
+
+        with alert_col2:
+
+            if wind_speed >= 40:
+
+                st.error(
+                    "💨 Strong Wind Alert\n\n"
+                    f"Current wind speed: {wind_speed:.1f} km/h"
+                )
+
+            elif wind_speed >= 25:
+
+                st.warning(
+                    "💨 Moderate Wind Alert\n\n"
+                    f"Current wind speed: {wind_speed:.1f} km/h"
+                )
+
+            else:
+
+                st.success(
+                    "🌿 No Significant Wind Alert"
+                )
+
+
+        # =================================================
+        # LAST UPDATED
+        # =================================================
+
+        st.markdown("---")
+
+        st.caption(
+            f"🔄 Weather data automatically refreshes every 5 minutes."
         )
 
-        if maximum_wind >= 60:
+        st.caption(
+            f"Last weather update: {current.get('time', 'N/A')}"
+        )
 
-            st.error(
-                f"🚨 Strong Wind Alert — "
-                f"{maximum_wind} km/h forecast."
-            )
-
-        elif maximum_wind >= 40:
-
-            st.warning(
-                f"⚠️ Moderate Wind Alert — "
-                f"{maximum_wind} km/h forecast."
-            )
-
-        else:
-
-            st.success(
-                "✅ Wind conditions are below "
-                "the alert threshold."
-            )
 
         # =================================================
         # FOOTER
         # =================================================
 
-        st.divider()
+        st.markdown("---")
 
         st.caption(
-            "🌦️ Weather: Open-Meteo API | "
-            "🗺️ Map: Folium/OpenStreetMap | "
-            "🔊 Voice: Google Text-to-Speech (gTTS)"
+            "Weather: Open-Meteo API | "
+            "Map: Folium/OpenStreetMap | "
+            "Voice: Google Text-to-Speech (gTTS)"
         )
 
         st.caption(
-            "🔄 Weather automatically refreshes every 5 minutes."
+            "⚠️ Disclaimer: Risk levels shown by this prototype "
+            "are indicative and are not official government warnings. "
+            "Always follow official disaster-management alerts."
         )
 
-        st.caption(
-            "⚠️ Risk levels are application-generated "
-            "prototype indicators. They are not official "
-            "government disaster warnings."
-        )
 
     else:
 
         st.error(
-            "❌ Unable to retrieve weather data. "
-            f"API status code: {response.status_code}"
+            f"Weather API error. Status code: {response.status_code}"
         )
 
-except requests.exceptions.Timeout:
+
+except requests.exceptions.RequestException:
 
     st.error(
-        "⏱️ Weather service timed out. "
-        "Please try again."
-    )
-
-except requests.exceptions.RequestException as e:
-
-    st.error(
-        f"🌐 Network error: {e}"
+        "Unable to connect to the weather service. "
+        "Please check your internet connection."
     )
 
 except Exception as e:
 
     st.error(
-        f"❌ Unexpected error: {e}"
-            )
+        f"An unexpected error occurred: {str(e)}"
+)
