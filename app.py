@@ -4,6 +4,7 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 from gtts import gTTS
+from streamlit_autorefresh import st_autorefresh
 
 
 # =========================================================
@@ -15,7 +16,34 @@ st.set_page_config(
     page_icon="🚨",
     layout="wide"
 )
+st_autorefresh(
+    interval=10 * 60 * 1000,
+    key="weather_refresh"
+)
+st.markdown("""
+<style>
+.stApp {
+    background:
+        linear-gradient(
+            rgba(10, 35, 55, 0.82),
+            rgba(5, 25, 45, 0.90)
+        ),
+        url("https://images.unsplash.com/photo-1519692933481-e162a57d6721?auto=format&fit=crop&w=2000&q=80");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}
 
+.weather-card {
+    background: rgba(255,255,255,0.15);
+    padding: 15px;
+    border-radius: 15px;
+    text-align: center;
+    margin: 5px;
+    backdrop-filter: blur(8px);
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================================================
 # TITLE
@@ -110,6 +138,14 @@ weather_params = {
         "wind_speed_10m",
         "weather_code"
     ],
+    "hourly": [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "precipitation",
+    "precipitation_probability",
+    "wind_speed_10m",
+    "weather_code"
+],
     "daily": [
         "temperature_2m_max",
         "temperature_2m_min",
@@ -399,6 +435,25 @@ try:
     if response.status_code == 200:
 
         data = response.json()
+        # Get hourly weather data
+hourly = data["hourly"]
+
+hourly_df = pd.DataFrame({
+    "Time": pd.to_datetime(hourly["time"]),
+    "Temperature (°C)": hourly["temperature_2m"],
+    "Rain (mm)": hourly["precipitation"],
+    "Rain Probability (%)": hourly["precipitation_probability"],
+    "Humidity (%)": hourly["relative_humidity_2m"],
+    "Wind (km/h)": hourly["wind_speed_10m"]
+})
+
+st.subheader("🕐 Hourly Weather Forecast")
+
+st.dataframe(
+    hourly_df.head(24),
+    use_container_width=True,
+    hide_index=True
+)
 
         current = data["current"]
         daily = data["daily"]
